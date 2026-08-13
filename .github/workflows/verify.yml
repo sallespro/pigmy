@@ -1,0 +1,59 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        working-directory: har
+        run: npm ci
+
+      # Structural verification only. The --live checks need a provider
+      # credential, which CI does not have and must not be given: the whole
+      # point of the secret discipline is that the key stays out of shared
+      # environments. Live verification is run locally by the operator.
+      - name: Verify
+        working-directory: har
+        run: node bin/verify.mjs
+
+      # The harness must pass its own diff-scoped gates on its own source.
+      # Closure gates (ci-validated-fresh, residual-scan-fired) are excluded
+      # here by design -- they describe operator state, not repository state,
+      # and asserting them from inside CI would be a claim without a witness.
+      - name: Self-gate on source hygiene
+        run: |
+          node --input-type=module -e '
+            const { createGates } = await import("./har/src/core/gates.mjs");
+            const { Store } = await import("./har/src/core/store.mjs");
+            const root = process.cwd();
+            const store = new Store(root).init();
+            const { evaluateGate } = createGates({ root, store, options: {} });
+            const gates = [
+              "no-secrets-in-diff",
+              "no-admit-deferral-markers",
+              "no-graphical-symbols-in-diff",
+              "no-hedge-language-in-diff",
+              "no-unchecked-panics-in-diff",
+              "no-synthetic-test-files",
+              "idempotent-dispatch-replay-safe",
+            ];
+            let failed = 0;
+            for (const gate of gates) {
+              const verdict = await evaluateGate(gate);
+              if (!verdict.ok) failed += 1;
+              console.log(`${verdict.ok ? "pass" : "FAIL"}  ${gate}  ${verdict.detail}`);
+            }
+            if (failed > 0) process.exitCode = 1;
+          '
