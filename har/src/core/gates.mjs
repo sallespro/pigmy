@@ -1,7 +1,7 @@
 /**
  * The gate registry.
  *
- * Fifteen predicates, semantics taken from AnEntrypoint/gm-config
+ * Sixteen predicates, semantics taken from AnEntrypoint/gm-config
  * fsm/predicates.md. Each returns `{ ok, detail }` and never throws: a probe
  * that cannot determine its answer returns `ok: false`, so a broken check
  * refuses an edge rather than waving it through.

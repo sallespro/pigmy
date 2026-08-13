@@ -4,7 +4,7 @@ A [pi](https://github.com/earendil-works/pi) agent that runs code under
 [gm](https://github.com/AnEntrypoint/gm) admission discipline.
 
 pi provides the agent runtime and its lifecycle hooks. gm provides the
-discipline: a nine-state phase machine, fifteen gate predicates, and a
+discipline: a nine-state phase machine, sixteen gate predicates, and a
 three-layer admission filter. This harness joins them, so every mutation the
 agent attempts is admitted or refused before it runs, and every mutation that
 runs is recorded as an audit tuple.
@@ -120,7 +120,7 @@ src/
   core/
     config.mjs     credential loading and redaction
     fsm.mjs        nine states, twenty-one edges
-    gates.mjs      fifteen gate predicates
+    gates.mjs      sixteen gate predicates
     admission.mjs  the three-layer filter
     store.mjs      phase, PRD, mutables, witness ledger
     harness.mjs    the join: pi hooks wired to gm discipline

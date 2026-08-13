@@ -233,7 +233,7 @@ it is information routed back to the agent as a steering message.
 
 ## 6. Gate registry
 
-Fifteen predicates, semantics taken verbatim from gm's `fsm/predicates.md`.
+Sixteen predicates, semantics taken verbatim from gm's `fsm/predicates.md`.
 
 | Predicate | True when |
 | --- | --- |
