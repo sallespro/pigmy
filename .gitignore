@@ -1,0 +1,32 @@
+# --- secrets: never commit ---
+.env
+*.env
+!*.env.example
+har/.env
+pop/.env
+
+# --- os / editor ---
+.DS_Store
+
+# --- node ---
+node_modules/
+*.log
+
+# --- pi-gm harness runtime state (derived per workspace) ---
+.gm-pi/
+
+# --- agentplug runtime kv ---
+.agentplug-kv/
+
+# --- gm managed runtime (derived / transient) ---
+.gm/exec-spool/
+.gm/witness/
+.gm/gm.db
+.gm/gm.db-*
+.gm/config-source-cache-default/
+
+# --- separate project with its own git repository ---
+pop/
+
+# --- gm session state (managed by the gm skill, not this project) ---
+.gm/

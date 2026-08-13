@@ -1,0 +1,23 @@
+{
+  "name": "pi-gm-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A pi agent harness governed by gm admission discipline",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "pi-gm": "./bin/pi-gm.mjs"
+  },
+  "scripts": {
+    "run:agent": "node bin/pi-gm.mjs",
+    "verify": "node bin/verify.mjs",
+    "verify:live": "node bin/verify.mjs --live",
+    "gates": "node bin/gates.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.1",
+    "@earendil-works/pi-ai": "^0.84.1"
+  }
+}
