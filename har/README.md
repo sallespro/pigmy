@@ -19,11 +19,15 @@ The design rationale and full contract are in [spec.md](spec.md).
 
 ## Setup
 
+The harness lives in `har/`:
+
 ```bash
+git clone https://github.com/sallespro/pigmy.git
+cd pigmy/har
 npm install
 ```
 
-Create `.env` in this directory:
+Create `.env` in that directory:
 
 ```
 OPENAI_API_KEY=sk-your-key-here
