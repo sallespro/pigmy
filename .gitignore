@@ -42,3 +42,9 @@ pop/
 har/.agents/
 har/.claude/
 har/skills-lock.json
+
+# --- lite: litebox build artifacts and per-run sandbox state ---
+lite/.litebox-work/
+lite/.agentplug/
+lite/.claude/
+lite/sandbox-service/.sandboxes/
