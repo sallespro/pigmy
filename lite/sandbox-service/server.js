@@ -3,6 +3,16 @@
 // isolation, with per-sandbox export-writable-layer paths (avoids the tar
 // collision hazard from two sandboxes sharing one export path), CPU/memory/
 // wall-clock limits, and a lifecycle registry queryable over HTTP.
+//
+// Network and secrets are opt-in per spawn, never default-on: `network: true`
+// gives the guest a TUN device NATed to the container's own outbound
+// interface (litebox itself only forwards guest<->TUN packets; it provides
+// no NAT/internet routing on its own), and `env: {NAME: value}` passes
+// secrets straight to litebox's own --env K=V (never --forward-env, and
+// never written to the sandbox's persisted in/out files or logs).
+// `mode: "server"` is for a sandbox that stays up rather than running to
+// quick completion (its own long default timeout, plus optional
+// `publishPort` to make a guest-bound port reachable from the host).
 'use strict';
 
 const http = require('node:http');
@@ -26,6 +36,10 @@ const DEFAULT_MEMORY = process.env.SANDBOX_DEFAULT_MEMORY || '1536m';
 const DEFAULT_CPUS = process.env.SANDBOX_DEFAULT_CPUS || '1.0';
 const MAX_APP_BYTES = Number(process.env.SANDBOX_MAX_APP_BYTES || 20 * 1024 * 1024);
 const MAX_ENTRY_BYTES = Number(process.env.SANDBOX_MAX_ENTRY_BYTES || 5 * 1024 * 1024);
+const MAX_COMMAND_BYTES = Number(process.env.SANDBOX_MAX_COMMAND_BYTES || 64 * 1024);
+// Env var NAME allow-list pattern -- rejects anything that could smuggle a
+// second variable via embedded '=' or shell metacharacters into --env K=V.
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** @typedef {'queued'|'running'|'completed'|'failed'|'timed_out'|'stopped'} SandboxStatus */
 
@@ -91,9 +105,9 @@ function sendJson(res, statusCode, body) {
  * Validate + materialize the spawn request's app files onto disk under a
  * fresh per-sandbox directory. Files map: { "relative/path.js": "source text" }.
  * Precondition: every key passes isPathSafe (no absolute paths, no traversal).
- * Postcondition: sandboxDir/app/<entry> exists and is non-empty.
+ * Postcondition: sandboxDir/in/app/<entry> exists and is non-empty.
  */
-async function materializeApp(sandboxDir, { entry, files }) {
+async function materializeFileApp(sandboxDir, { entry, files }) {
   if (!isPathSafe(entry)) {
     throw Object.assign(new Error(`invalid entry path: ${entry}`), { statusCode: 400 });
   }
@@ -131,8 +145,56 @@ async function materializeApp(sandboxDir, { entry, files }) {
   if (entryStat.size > MAX_ENTRY_BYTES) {
     throw Object.assign(new Error('entry file exceeds size limit'), { statusCode: 413 });
   }
+  await fsp.writeFile(path.join(sandboxDir, 'in', 'mode'), 'node', 'utf8');
   await fsp.writeFile(path.join(sandboxDir, 'in', 'entry'), entry, 'utf8');
-  return appDir;
+}
+
+/**
+ * Materialize a shell-command sandbox: the guest runs `/bin/sh -c <command>`
+ * instead of `node <entry>` -- for apps that need `git clone`/`npm install`/
+ * `npm start` rather than a single JS entry file (e.g. whole-repo apps like
+ * sallespro/sand). Precondition: command is a non-empty string under
+ * MAX_COMMAND_BYTES. The command text itself may embed a secret (e.g. a
+ * one-off inline env assignment) so it is written under sandboxDir/in, which
+ * the container mounts read-only and which is never included in /logs output.
+ */
+async function materializeCommandApp(sandboxDir, { command }) {
+  if (typeof command !== 'string' || command.trim().length === 0) {
+    throw Object.assign(new Error('command must be a non-empty string'), { statusCode: 400 });
+  }
+  if (Buffer.byteLength(command, 'utf8') > MAX_COMMAND_BYTES) {
+    throw Object.assign(new Error('command exceeds size limit'), { statusCode: 413 });
+  }
+  await fsp.mkdir(path.join(sandboxDir, 'in'), { recursive: true });
+  await fsp.writeFile(path.join(sandboxDir, 'in', 'mode'), 'shell', 'utf8');
+  await fsp.writeFile(path.join(sandboxDir, 'in', 'command'), command, 'utf8');
+}
+
+/**
+ * Validate the optional secret/env map for a spawn request. Names are
+ * allow-listed against ENV_NAME_RE so no value can smuggle a second
+ * "--env" argument or shell metacharacter through the name field; values
+ * are passed through verbatim to litebox's own --env K=V (never through a
+ * shell, so a value's own content cannot break out of its assignment).
+ * Postcondition: returns a list of "NAME=value" strings safe to pass as
+ * repeated --env arguments; never written to sandboxDir, a log, or the tar.
+ */
+function validateEnv(env) {
+  if (env === undefined) return [];
+  if (typeof env !== 'object' || env === null || Array.isArray(env)) {
+    throw Object.assign(new Error('env must be an object of {NAME: value}'), { statusCode: 400 });
+  }
+  const pairs = [];
+  for (const [name, value] of Object.entries(env)) {
+    if (!ENV_NAME_RE.test(name)) {
+      throw Object.assign(new Error(`invalid env var name: ${name}`), { statusCode: 400 });
+    }
+    if (typeof value !== 'string') {
+      throw Object.assign(new Error(`env var value must be a string: ${name}`), { statusCode: 400 });
+    }
+    pairs.push(`${name}=${value}`);
+  }
+  return pairs;
 }
 
 /**
@@ -151,15 +213,38 @@ function launchContainer(id, sandboxDir, opts) {
     'run',
     '--name', containerName,
     '--rm',
-    '--privileged', // required by litebox_runner_linux_userland's own seccomp/namespace setup
-    '--network', 'none', // no network by construction; opt-in networking is a documented future PRD row
+    '--privileged', // required by litebox_runner_linux_userland's own seccomp/namespace setup,
+                     // and by this container's own `ip tuntap add`/iptables NAT setup when network is opted in
     '--cpus', String(opts.cpus),
     '--memory', String(opts.memory),
     '--pids-limit', '256',
+  ];
+
+  // Network is opt-in per spawn, never default-on: --network none unless the
+  // caller explicitly asked for it, matching litebox's own opt-in TUN model.
+  if (opts.network) {
+    args.push('-e', 'SANDBOX_NETWORK=1');
+  } else {
+    args.push('--network', 'none');
+  }
+
+  // Secrets are passed as container env vars, which entrypoint.sh forwards to
+  // litebox's own --env K=V (never --forward-env) -- never written to the
+  // sandbox's in/ files, the tar, or any log.
+  for (const pair of opts.envPairs) {
+    args.push('-e', pair);
+  }
+
+  if (opts.publishPort) {
+    args.push('-p', `${opts.publishPort}:${opts.publishPort}`);
+    args.push('-e', `SANDBOX_PUBLISH_PORT=${opts.publishPort}`);
+  }
+
+  args.push(
     '-v', `${inDir}:/sandbox-in:ro`,
     '-v', `${outDir}:/sandbox-out`,
     IMAGE,
-  ];
+  );
 
   const child = spawn('docker', args, { stdio: ['ignore', logFd, logFd] });
 
@@ -212,31 +297,63 @@ function drainQueue() {
 
 async function handleSpawn(req, res) {
   const body = await readJsonBody(req, MAX_APP_BYTES + 1024 * 1024);
-  const { entry, files } = body;
+  const { entry, files, command } = body;
 
+  const isCommandMode = typeof command === 'string';
+  if (isCommandMode && (entry !== undefined || files !== undefined)) {
+    throw Object.assign(new Error('cannot combine command with entry/files'), { statusCode: 400 });
+  }
+
+  // Server mode: a sandbox that stays up (e.g. an HTTP server) rather than
+  // running to quick completion. Its default timeout is far longer, since a
+  // short DEFAULT_TIMEOUT_MS would kill a server as soon as it finished
+  // starting -- callers still get a real ceiling via MAX_TIMEOUT_MS, and can
+  // always POST /sandboxes/:id/stop to end it deliberately before that.
+  const mode = body.mode === 'server' ? 'server' : 'run';
+  const defaultTimeoutMs = mode === 'server' ? MAX_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
   const timeoutMs = Math.min(
-    Math.max(1, Number(body.timeoutMs) || DEFAULT_TIMEOUT_MS),
+    Math.max(1, Number(body.timeoutMs) || defaultTimeoutMs),
     MAX_TIMEOUT_MS,
   );
   const memory = typeof body.memory === 'string' ? body.memory : DEFAULT_MEMORY;
   const cpus = typeof body.cpus === 'string' || typeof body.cpus === 'number' ? String(body.cpus) : DEFAULT_CPUS;
+  const network = body.network === true;
+  const envPairs = validateEnv(body.env);
+  const publishPort = body.publishPort !== undefined ? Number(body.publishPort) : undefined;
+  if (publishPort !== undefined) {
+    if (!network) {
+      throw Object.assign(new Error('publishPort requires network: true'), { statusCode: 400 });
+    }
+    if (!Number.isInteger(publishPort) || publishPort < 1 || publishPort > 65535) {
+      throw Object.assign(new Error('publishPort must be a valid port number'), { statusCode: 400 });
+    }
+  }
 
   const id = newId();
   const sandboxDir = path.join(WORK_ROOT, id);
   await fsp.mkdir(path.join(sandboxDir, 'out'), { recursive: true });
 
-  await materializeApp(sandboxDir, { entry, files });
+  if (isCommandMode) {
+    await materializeCommandApp(sandboxDir, { command });
+  } else {
+    await materializeFileApp(sandboxDir, { entry, files });
+  }
 
   sandboxes.set(id, {
     id,
     status: 'queued',
     createdAt: new Date().toISOString(),
+    mode,
     timeoutMs,
     memory,
     cpus,
+    network,
+    publishPort,
+    // envPairs' names are recorded for observability; values never are.
+    envNames: envPairs.map((p) => p.split('=')[0]),
   });
 
-  queue.push({ id, sandboxDir, opts: { timeoutMs, memory, cpus } });
+  queue.push({ id, sandboxDir, opts: { timeoutMs, memory, cpus, network, envPairs, publishPort } });
   drainQueue();
 
   sendJson(res, 202, { id, status: sandboxes.get(id).status });
@@ -245,8 +362,8 @@ async function handleSpawn(req, res) {
 function handleStatus(res, id) {
   const s = sandboxes.get(id);
   if (!s) return sendJson(res, 404, { error: 'not found' });
-  const { id: sid, status, createdAt, startedAt, endedAt, exitCode, signal, containerName } = s;
-  sendJson(res, 200, { id: sid, status, createdAt, startedAt, endedAt, exitCode, signal, containerName });
+  const { id: sid, status, mode, createdAt, startedAt, endedAt, exitCode, signal, containerName, network, publishPort, envNames } = s;
+  sendJson(res, 200, { id: sid, status, mode, createdAt, startedAt, endedAt, exitCode, signal, containerName, network, publishPort, envNames });
 }
 
 async function handleLogs(res, id) {
