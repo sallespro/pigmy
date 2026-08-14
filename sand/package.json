@@ -1,0 +1,23 @@
+{
+  "name": "sand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A sandbox that clones two pi agent harnesses, runs them on one task simultaneously, and streams every event to a webjsx app",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "esbuild src/web/main.jsx --bundle --format=esm --jsx=automatic --jsx-import-source=webjsx --outfile=public/app.js",
+    "watch": "npm run build -- --watch",
+    "start": "npm run build && node src/engine/server.mjs",
+    "serve": "node src/engine/server.mjs",
+    "verify": "node bin/verify.mjs"
+  },
+  "dependencies": {
+    "webjsx": "^0.0.73"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

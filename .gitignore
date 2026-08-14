@@ -15,8 +15,15 @@ node_modules/
 # --- pi-gm harness runtime state (derived per workspace) ---
 .gm-pi/
 
+# --- lean harness runtime state (derived per workspace) ---
+.lean/
+
 # --- agentplug runtime kv ---
 .agentplug-kv/
+
+# --- sandbox: agent clones, per-run workspaces, and run logs ---
+sand/run/
+sand/public/app.js
 
 # --- gm managed runtime (derived / transient) ---
 .gm/exec-spool/

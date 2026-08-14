@@ -1,0 +1,17 @@
+# --- secrets: never commit ---
+.env
+*.env
+!.env.example
+
+# --- node ---
+node_modules/
+*.log
+
+# --- build output (reproduce with `npm run build`) ---
+public/app.js
+
+# --- sandbox runtime: agent clones, workspaces, run logs ---
+run/
+
+# --- os / editor ---
+.DS_Store
