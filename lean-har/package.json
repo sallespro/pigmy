@@ -1,0 +1,22 @@
+{
+  "name": "lean-har",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A pi agent harness governed by the lean method",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "lean-har": "./bin/lean-har.mjs"
+  },
+  "scripts": {
+    "run:agent": "node bin/lean-har.mjs",
+    "verify": "node bin/verify.mjs",
+    "verify:live": "node bin/verify.mjs --live"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.1",
+    "@earendil-works/pi-ai": "^0.84.1"
+  }
+}
