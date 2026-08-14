@@ -11,10 +11,24 @@
 import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 
-/** Tools that mutate state, and how each derives its written surface. */
+/** An omitted, empty, or whitespace-only path argument means the root. */
+function blankToRoot(value) {
+  if (value === null || value === undefined) return ".";
+  const text = String(value).trim();
+  return text === "" ? "." : text;
+}
+
+/**
+ * Tools that mutate state, and how each derives its written surface.
+ *
+ * `exec` writes wherever it runs, so its surface is its working directory.
+ * An absent, empty, or whitespace-only `cwd` all mean the same thing -- the
+ * workspace root -- so they normalize to "." rather than to "no surface".
+ * Treating an empty string as "no surface" would block a well-formed call.
+ */
 const MUTATING = {
   write_file: (args) => args?.path,
-  exec: (args) => args?.cwd ?? ".",
+  exec: (args) => blankToRoot(args?.cwd),
 };
 
 /** Tool names that assert completion and therefore require prior evidence. */
@@ -119,11 +133,25 @@ export function createAdmissionFilter({
   function layer2({ callId, toolName, args }) {
     if (!isMutating(toolName)) return ADMIT;
     const surface = surfaceFor(root, toolName, args);
-    if (!surface) return reject("L2", `${toolName} names no writable surface`);
+    if (!surface) {
+      // A rejection the model cannot act on produces an identical retry, so
+      // name the argument at fault and what a valid call looks like.
+      const argName = toolName === "exec" ? "cwd" : "path";
+      return reject(
+        "L2",
+        `${toolName} could not resolve a writable surface from its "${argName}" argument ` +
+          `(received ${JSON.stringify(args?.[argName])}). Retry with "${argName}" omitted to ` +
+          `use the workspace root, or set it to a path inside the workspace.`,
+      );
+    }
     const holder = claims.get(surface);
     if (holder && holder !== callId) {
       deferred.push({ callId, toolName, surface, ts: Date.now() });
-      return reject("L2", `surface already claimed by in-flight writer ${holder}; deferred`);
+      return reject(
+        "L2",
+        `surface ${surface} is already claimed by in-flight writer ${holder}; this call was ` +
+          `deferred. Wait for that write to finish, or target a different path.`,
+      );
     }
     return ADMIT;
   }

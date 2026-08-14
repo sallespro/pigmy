@@ -249,6 +249,34 @@ async function verifyAdmission() {
     false,
   );
 
+  // A model may spell "the workspace root" as an omitted, empty, or
+  // whitespace-only cwd. All of them must resolve to a real surface: treating
+  // any of them as "no surface" blocks a well-formed exec and strands the run.
+  const fc = createAdmissionFilter({ root: dir, store });
+  for (const [label, args] of [
+    ["omitted cwd", { command: "true" }],
+    ["empty cwd", { command: "true", cwd: "" }],
+    ["whitespace cwd", { command: "true", cwd: "   " }],
+    ["null cwd", { command: "true", cwd: null }],
+    ["dot cwd", { command: "true", cwd: "." }],
+  ]) {
+    const id = `cwd-${label.replace(/\s+/g, "-")}`;
+    const verdict = fc.admit({ callId: id, toolName: "exec", args });
+    check(`exec admitted with ${label}`, verdict.admit, true, verdict.reason);
+    fc.release({ callId: id });
+  }
+
+  // A rejection the model cannot act on produces an identical retry.
+  const fr = createAdmissionFilter({ root: dir, store });
+  const unresolvable = fr.admit({ callId: "nosurface", toolName: "write_file", args: {} });
+  check("unresolvable surface still blocks", unresolvable.admit, false);
+  check(
+    "that rejection names the argument at fault",
+    unresolvable.reason.includes('"path"'),
+    true,
+    unresolvable.reason,
+  );
+
   const f3 = createAdmissionFilter({ root: dir, store });
   const unwitnessed = f3.admit({ callId: "k", toolName: "complete", args: { id: "ghost" } });
   check("L1 refuses an unwitnessed claim", unwitnessed.admit, false, unwitnessed.reason);

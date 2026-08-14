@@ -30,3 +30,8 @@ pop/
 
 # --- gm session state (managed by the gm skill, not this project) ---
 .gm/
+
+# --- skill tooling artifacts, not part of the harness ---
+har/.agents/
+har/.claude/
+har/skills-lock.json
