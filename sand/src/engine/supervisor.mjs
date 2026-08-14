@@ -360,6 +360,11 @@ export function createSupervisor({ sandboxRoot, apiKey, historyLimit }) {
     bus,
     startRun,
     stopRun,
+    /**
+     * Where a given agent worked. Exposed so artifacts can be served for
+     * any run on disk, not only the one currently in memory.
+     */
+    workspaceFor: (runId, agentId) => join(sandboxRoot, "workspaces", runId, agentId),
     snapshot: () => ({ ...state, agents: { ...state.agents }, seq: bus.seq }),
   };
 }

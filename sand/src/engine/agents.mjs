@@ -12,6 +12,16 @@
  * inside a clone.
  */
 
+/**
+ * Both harnesses tend to treat "provide HTML" as "print HTML to stdout",
+ * which leaves nothing on disk for the UI to show. The sandbox presents
+ * artifacts -- files in the workspace -- so ask for the file itself.
+ */
+const ARTIFACT_BRIEFING =
+  "When the task asks for a document (HTML, CSV, JSON, a report), write it to a file " +
+  "in the workspace root rather than only printing it to stdout, so it can be opened " +
+  "and viewed. Printing as well is fine.";
+
 export const AGENTS = [
   {
     id: "pilean",
@@ -40,7 +50,8 @@ export const AGENTS = [
     briefing:
       "The workspace is a git repository whose HEAD is an empty baseline commit. " +
       "Run `git add -A` after creating or modifying files, so your work appears in " +
-      "`git diff HEAD` -- that diff is what the gates evaluate.",
+      "`git diff HEAD` -- that diff is what the gates evaluate. " +
+      ARTIFACT_BRIEFING,
     /**
      * Exit 0 means the sweep reached a fixed point; exit 1 means it
      * surfaced a condition needing a person. Neither is a crash.
@@ -93,7 +104,8 @@ export const AGENTS = [
     briefing:
       "Specifying the work is not finishing it: create the actual files the task asks " +
       "for in the workspace root, run them, and report what happened. A specification " +
-      "in .gm-pi/ alone does not satisfy the request.",
+      "in .gm-pi/ alone does not satisfy the request. " +
+      ARTIFACT_BRIEFING,
     classifyExit(code) {
       if (code === 0) return { outcome: "completed", ok: true };
       if (code === 2) return { outcome: "misconfigured", ok: false };

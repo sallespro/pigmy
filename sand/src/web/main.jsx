@@ -43,6 +43,8 @@ const actions = {
   stop: () => store.stop(),
   setFilter: (key, value) => store.setFilter(key, value),
   setFollow: (value) => store.setFollow(value),
+  selectArtifact: (agentId, name) => store.selectArtifact(agentId, name),
+  closeArtifact: () => store.closeArtifact(),
 };
 
 render(store.state);

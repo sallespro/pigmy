@@ -85,10 +85,11 @@ function agentCard(agent) {
  * A column of events for one agent. Two columns side by side is the whole
  * reason for the sandbox: the same task, two disciplines, in step.
  */
-function agentColumn(id, agent, events) {
+function agentColumn(id, agent, events, artifacts, actions) {
   return (
     <section class="column" key={id}>
       {agentCard(agent)}
+      {artifactList(id, artifacts, actions)}
       <div class={`stream stream-${id}`} data-stream={id}>
         {events.length === 0 ? (
           <div class="empty">no events yet</div>
@@ -97,6 +98,80 @@ function agentColumn(id, agent, events) {
         )}
       </div>
     </section>
+  );
+}
+
+function bytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * The files an agent left behind. This is the deliverable -- the event
+ * stream says what happened, but a generated page is only meaningful if
+ * you can open it.
+ */
+function artifactList(agentId, artifacts, actions) {
+  if (!artifacts || artifacts.length === 0) return null;
+  return (
+    <div class="artifacts">
+      <div class="artifacts-title">{`artifacts (${artifacts.length})`}</div>
+      {artifacts.map((a) => (
+        <button
+          type="button"
+          class={`artifact kind-${a.kind}`}
+          key={a.name}
+          disabled={!a.renderable || a.kind === "binary"}
+          onclick={() => actions.selectArtifact(agentId, a.name)}
+        >
+          <span class="artifact-name">{a.name}</span>
+          <span class="artifact-size">{bytes(a.size)}</span>
+          {a.kind === "html" ? <span class="artifact-tag">html</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The artifact overlay. HTML is rendered in a sandboxed iframe via srcdoc:
+ * the page came from a model, so it runs with scripts and same-origin
+ * access withheld rather than trusted against this app's own origin.
+ */
+function artifactViewer(state, actions) {
+  const v = state.viewer;
+  if (!v) return null;
+
+  const body = state.viewerLoading ? (
+    <div class="viewer-empty">loading…</div>
+  ) : v.kind === "html" ? (
+    <iframe class="viewer-frame" sandbox="" srcdoc={v.content} title={v.name}></iframe>
+  ) : v.kind === "error" ? (
+    <div class="viewer-error">{v.content}</div>
+  ) : (
+    <pre class="viewer-source">{v.content}</pre>
+  );
+
+  return (
+    <div
+      class="viewer-backdrop"
+      onclick={(e) => {
+        if (e.target.classList.contains("viewer-backdrop")) actions.closeArtifact();
+      }}
+    >
+      <div class="viewer">
+        <div class="viewer-head">
+          <span class={`badge badge-${v.agentId}`}>{v.agentId}</span>
+          <span class="viewer-name">{v.name}</span>
+          {v.kind === "html" ? <span class="artifact-tag">rendered</span> : null}
+          <button type="button" class="viewer-close" onclick={() => actions.closeArtifact()}>
+            close
+          </button>
+        </div>
+        {body}
+      </div>
+    </div>
   );
 }
 
@@ -196,6 +271,8 @@ export function App({ state, actions }) {
             id,
             state.agents[id],
             visible.filter((e) => e.agent === id),
+            state.artifacts[id],
+            actions,
           ),
         )}
       </main>
@@ -210,6 +287,8 @@ export function App({ state, actions }) {
           )}
         </div>
       </footer>
+
+      {artifactViewer(state, actions)}
     </div>
   );
 }

@@ -256,6 +256,141 @@ button.go:not(:disabled) {
   word-break: break-word;
 }
 
+/* --- artifacts: what the agent actually produced --- */
+
+.artifacts {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.artifacts-title {
+  width: 100%;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+
+.artifact {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.artifact:hover:not(:disabled) {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.artifact:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.artifact.kind-html {
+  border-color: #3a5a7a;
+}
+
+.artifact-size {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.artifact-tag {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #1d3a52;
+  color: #cfe8ff;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* --- artifact viewer --- */
+
+.viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 10;
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 100%);
+  height: min(88vh, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.viewer-name {
+  color: var(--text);
+}
+
+.viewer-close {
+  margin-left: auto;
+}
+
+/* The rendered page gets a white ground: it is a document, not part of
+   this app's dark chrome, and most generated pages assume a light body. */
+.viewer-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.viewer-source {
+  flex: 1;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg);
+}
+
+.viewer-empty,
+.viewer-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+}
+
+.viewer-error {
+  color: var(--bad);
+}
+
 /* --- event streams --- */
 
 .stream {

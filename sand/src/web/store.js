@@ -26,6 +26,12 @@ export function createStore(onChange) {
     filter: { pilean: true, pigmy: true, noise: false },
     follow: true,
     error: "",
+    // What the agents produced: a per-agent file list, plus whichever one
+    // the user opened. `viewer` holds the fetched content so a re-render
+    // does not refetch it.
+    artifacts: {},
+    viewer: null,
+    viewerLoading: false,
   };
 
   let lastSeq = 0;
@@ -46,6 +52,8 @@ export function createStore(onChange) {
       if (event.message.endsWith("started")) state.status = "running";
       if (event.message.endsWith("finished") || event.message.endsWith("aborted")) {
         state.status = "done";
+        // The artifacts exist only once the agents have exited.
+        refreshArtifacts(event.runId ?? state.runId);
       }
       if (event.runId) state.runId = event.runId;
     }
@@ -53,6 +61,24 @@ export function createStore(onChange) {
     state.events.push(event);
     if (state.events.length > MAX_EVENTS) {
       state.events.splice(0, state.events.length - MAX_EVENTS);
+    }
+  }
+
+  /**
+   * Pull the file listing for a run. Called when a run ends and on load,
+   * so re-opening the page after a run still shows what it produced.
+   */
+  async function refreshArtifacts(runId) {
+    const id = runId ?? state.runId;
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/artifacts?runId=${encodeURIComponent(id)}`);
+      const data = await res.json();
+      state.artifacts = Object.fromEntries(data.agents.map((a) => [a.id, a.artifacts]));
+      notify();
+    } catch {
+      // The listing is a convenience; failing to get it must not disturb
+      // the event stream, which is the primary view.
     }
   }
 
@@ -123,8 +149,10 @@ export function createStore(onChange) {
     async start({ task, contract, reclone }) {
       state.error = "";
       // A new run starts a new narrative; clearing avoids reading the last
-      // run's events as if they belonged to this one.
+      // run's events, or its artifacts, as if they belonged to this one.
       state.events = [];
+      state.artifacts = {};
+      state.viewer = null;
       notify();
       try {
         await post("/api/run", { task, contract, reclone });
@@ -150,8 +178,32 @@ export function createStore(onChange) {
       state.follow = value;
       notify();
     },
+    /** Open one artifact, fetching its content once. */
+    async selectArtifact(agentId, name) {
+      state.viewerLoading = true;
+      state.viewer = { agentId, name, kind: null, content: "" };
+      notify();
+      try {
+        const query = new URLSearchParams({ runId: state.runId ?? "", agent: agentId, name });
+        const res = await fetch(`/api/artifact?${query}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "could not read artifact");
+        state.viewer = { agentId, name, kind: data.kind, content: data.content };
+      } catch (err) {
+        state.viewer = { agentId, name, kind: "error", content: err.message };
+      } finally {
+        state.viewerLoading = false;
+        notify();
+      }
+    },
+    closeArtifact() {
+      state.viewer = null;
+      notify();
+    },
     async init() {
       await refresh();
+      // A finished run reloaded in a new tab should still show its output.
+      if (state.runId) await refreshArtifacts(state.runId);
       connect();
     },
   };

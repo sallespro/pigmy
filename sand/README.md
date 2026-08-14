@@ -89,6 +89,22 @@ baseline, and each agent is briefed to `git add -A` its work so the diff the
 gates read is its own. Unstaged work is invisible to `git diff HEAD`, which
 means a perfect file that was never staged is judged as if it never existed.
 
+## Artifacts
+
+The event stream says what an agent *did*; the artifacts are what it
+produced. Each column lists the files left in that agent's workspace, and
+clicking one opens it: `.html` renders, everything textual shows its source.
+
+Generated pages are rendered in an `<iframe sandbox="" srcdoc="...">`. The
+markup came from a model, so it is displayed with scripts and same-origin
+access withheld rather than trusted against this app's origin. Reads are
+confined to the workspace -- a name that resolves outside it is refused, not
+served.
+
+Both harnesses tend to read "provide HTML" as "print HTML to stdout", which
+leaves nothing to open. Each agent is therefore briefed to write documents
+to a file in the workspace root as well.
+
 ## Exit codes are verdicts, not failures
 
 `pilean` exiting 1 means its sweep *surfaced* -- a condition needs a person --
@@ -109,12 +125,15 @@ which is a real outcome of the lean method, not a crash. The UI shows it as
 | `GET /api/events?since=N` | SSE feed, replaying everything after `N` |
 | `POST /api/run` | `{ task, contract?, reclone? }` |
 | `POST /api/stop` | SIGTERM every live child |
+| `GET /api/artifacts?runId=` | files each agent produced in that run |
+| `GET /api/artifact?runId=&agent=&name=` | one artifact's content |
 
 ## Layout
 
 ```
 src/engine/agents.mjs      what differs between the two harnesses
 src/engine/events.mjs      event bus, line splitter, stderr parser
+src/engine/artifacts.mjs   listing and reading what an agent produced
 src/engine/supervisor.mjs  clone, install, spawn, narrate
 src/engine/server.mjs      static files, control endpoints, SSE
 src/web/                   the webjsx app
@@ -140,6 +159,7 @@ which patches only what actually differs.
 npm run verify
 ```
 
-Sixteen offline checks over the parser, the replay cursor, the argv mapping,
-the exit-code classification, and the answer formatting. Nothing here spends
-API budget: a run that costs money is not a test.
+Twenty offline checks over the parser, the replay cursor, the argv mapping,
+the exit-code classification, the answer formatting, artifact classification,
+and the workspace-traversal guard. Nothing here spends API budget: a run that
+costs money is not a test.

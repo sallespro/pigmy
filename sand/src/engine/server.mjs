@@ -18,6 +18,7 @@ import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { AGENTS } from "./agents.mjs";
+import { listArtifacts, readArtifact } from "./artifacts.mjs";
 import { createSupervisor } from "./supervisor.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +163,44 @@ export function createSandboxServer({ apiKey, envPath }) {
         clearInterval(heartbeat);
         supervisor.bus.off("event", onEvent);
       });
+      return;
+    }
+
+    // What the agents actually produced, as opposed to what they did.
+    if (pathname === "/api/artifacts" && req.method === "GET") {
+      const runId = url.searchParams.get("runId") || supervisor.snapshot().runId;
+      if (!runId) {
+        sendJson(res, 200, { runId: null, agents: [] });
+        return;
+      }
+      const agents = await Promise.all(
+        AGENTS.map(async (a) => ({
+          id: a.id,
+          label: a.label,
+          artifacts: await listArtifacts(supervisor.workspaceFor(runId, a.id)),
+        })),
+      );
+      sendJson(res, 200, { runId, agents });
+      return;
+    }
+
+    if (pathname === "/api/artifact" && req.method === "GET") {
+      const runId = url.searchParams.get("runId") || supervisor.snapshot().runId;
+      const agentId = url.searchParams.get("agent");
+      const name = url.searchParams.get("name");
+      if (!runId || !agentId || !name) {
+        sendJson(res, 400, { error: "runId, agent and name are required" });
+        return;
+      }
+      if (!AGENTS.some((a) => a.id === agentId)) {
+        sendJson(res, 404, { error: "no such agent" });
+        return;
+      }
+      try {
+        sendJson(res, 200, await readArtifact(supervisor.workspaceFor(runId, agentId), name));
+      } catch (err) {
+        sendJson(res, 404, { error: err.message });
+      }
       return;
     }
 

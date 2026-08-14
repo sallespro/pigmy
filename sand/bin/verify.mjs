@@ -12,6 +12,7 @@
 import { strict as assert } from "node:assert";
 
 import { AGENTS, agentById } from "../src/engine/agents.mjs";
+import { classify, readArtifact } from "../src/engine/artifacts.mjs";
 import { EventBus, createLineSplitter, parseAgentLine } from "../src/engine/events.mjs";
 import { parseEnvFile } from "../src/engine/server.mjs";
 
@@ -151,6 +152,21 @@ check("briefs each agent on what finishing means here", () => {
   assert.match(agentById("pigmy").briefing, /not finishing it/);
 });
 
+check("classifies artifacts so html can be rendered and binaries refused", () => {
+  assert.equal(classify("report.html"), "html");
+  assert.equal(classify("weather.js"), "text");
+  assert.equal(classify("notes"), "text");
+  assert.equal(classify("chart.png"), "binary");
+});
+
+check("asks both agents to write documents to a file, not just stdout", () => {
+  // Otherwise "provide simple html" produces stdout only, and the UI has
+  // no artifact to show.
+  for (const id of ["pilean", "pigmy"]) {
+    assert.match(agentById(id).briefing, /write it to a file/);
+  }
+});
+
 check("parses the credential file shapes that occur in practice", () => {
   const env = parseEnvFile(
     ["# comment", "OPENAI_API_KEY=sk-test-000", 'export QUOTED="v w"', "bad line", "EMPTY="].join(
@@ -162,6 +178,25 @@ check("parses the credential file shapes that occur in practice", () => {
   assert.equal(env.EMPTY, "");
   assert.ok(!("bad line" in env));
 });
+
+// One async check: the traversal guard is the security-relevant part of
+// serving artifacts, so it is asserted against the real filesystem.
+await (async () => {
+  const name = "refuses to read outside the workspace";
+  try {
+    await readArtifact(process.cwd(), "../../../../etc/passwd");
+    failed += 1;
+    process.stdout.write(`  FAIL  ${name}\n        it returned content instead of refusing\n`);
+  } catch (err) {
+    if (/escapes the workspace/.test(err.message)) {
+      passed += 1;
+      process.stdout.write(`  pass  ${name}\n`);
+    } else {
+      failed += 1;
+      process.stdout.write(`  FAIL  ${name}\n        wrong error: ${err.message}\n`);
+    }
+  }
+})();
 
 process.stdout.write(`\n${passed} passing, ${failed} failing\n\n`);
 process.exit(failed === 0 ? 0 : 1);
